@@ -4,6 +4,7 @@ import time
 import math
 from typing import List
 
+
 IMAGE_STANDARD_WIDTH = 300
 
 CARD_MAX_AREA = 50000
@@ -48,6 +49,18 @@ class Card:
 		"""Return the Suit part of the card image"""
 		center = int (self.img.shape[1] / 2)
 		return self.img[:,center:]
+	
+	def setValue(self,value):
+		self.rank = value[0]
+		self.suit = value[1]
+
+	def __getstate__(self):
+		return self.rank+self.suit
+	
+	def printLocation(self):
+		print(self.rank+self.suit,self.loc)
+	
+	
 		
 
 class Board:
@@ -57,12 +70,23 @@ class Board:
 		self.cells = []
 		self.tableaus = []
 
+	def allCards(self): 
+		for c in self.goals:
+			yield c
+		for c in self.cells:
+			yield c
+		for stack in self.tableaus:
+			for c in stack:
+				yield c
+		
+
 	def placeCards(self,cards:List[Card]) -> None:
 		"""Place an unsorted list of cards into their appropriate structurual representations on the game board"""
 
 		# We are going to do analysis of the X and Y values to get a list of cardinal bucket values for the location
 		xValues = list(map(lambda c:c.loc[0],cards))
 		yValues = list(map(lambda c:c.loc[1],cards))
+		print('yValues',yValues)
 
 		minY = np.min(yValues)
 		topPartLimit = ((np.max(yValues) - minY) * .2) + minY 
@@ -82,20 +106,32 @@ class Board:
 				self.cells.append(c)	
 
 
-		yMedian = np.median(list(filter(lambda y: y > topPartLimit,yValues))) # since tableau stacks are 5x2, we can segreate along the horizontal midpoint
-
+		
+		yMedian = np.average(list(filter(lambda y: y > topPartLimit,yValues))) # since tableau stacks are 5x2, we can segregate along the horizontal midpoint		
+		print('yMedian',yMedian)
 		# setup our tableu colums		
 		tabColumns = []
 		for i in range(5):
 			tabColumns.append([])
 
 		xValues = sorted(np.unique(xValues)) 
-		xStep = xValues[1] - xValues[0]
+		nextX = xValues[1]
+		index = 1
+		while (nextX - xValues[0] < 15):
+			index += 1
+			nextX = xValues[index]
+
+		xStep = nextX - xValues[0]
 		xBase = xValues[0]+(xStep/2)
+
+		# print('xValues',xValues)
+		# print('xStep',xStep)
+		# print('xBase',xBase)
 		
 		# use a bit of math to find the appropriate column for our tableu cards.  Since cards are already sorted along y-axis, the will go in order bottom to top.
 		for c in tableauCards:
-			index = math.ceil((c.loc[0] - xBase) / xStep)			
+			index = math.ceil((c.loc[0] - xBase) / xStep)	
+			# print(index)		
 			tabColumns[index].append(c)		
 		# each full column is now ordered.  We now need to segregate along mid-point
 		
@@ -106,6 +142,9 @@ class Board:
 
 
 		# now the board has fully organized images in their understood locations.	
+			
+		
+
 
 def findCards(originalImage) -> List[Card]:
 	"""Finds all card-sized contours in a thresholded  image.
@@ -145,7 +184,7 @@ def findCards(originalImage) -> List[Card]:
 
 	cv2.drawContours(dst,boxes, -1, (0,255,0), 3)
 
-	showImage(dst)
+	# showImage(dst)
 
 	cards = []
 
@@ -169,7 +208,6 @@ def createBoard(img) -> Board:
 	
 	# showImage(image)
 	cards = findCards(img)
-	print(cards)
 
 	board = Board()
 	board.placeCards(cards) # put the cards into their semantic location on the board
