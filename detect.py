@@ -5,6 +5,7 @@
 
 import cv2
 import Cards
+import solver
 import sys
 import tensorflow.keras as keras
 import tensorflow as tf
@@ -34,7 +35,7 @@ img = cv2.imread(sys.argv[1])
 
 # Create the board from the image.  This will isolate the cards in the image AND determine their semantic location
 # on the board.  ( that is, is the card in the goals, the cells, or the tableau, etc.)
-board = Cards.createBoard(img)
+cardImages = Cards.findCards(img)
 
 # load the Keras model
 model = keras.models.load_model("seaModel.keras")
@@ -57,7 +58,7 @@ def detectImage(img) :
 
 
 # detect the rank and suit of each card, and set them into the card value
-for c in board.allCards():
+for c in cardImages:
 	
 	img = c.rankImage()	
 	rank = detectImage(img)
@@ -70,8 +71,14 @@ for c in board.allCards():
 
 print("Done Detecting")
 
-# output the Board as JSON
-print(jsonpickle.encode(board,unpicklable=False))
+
+# now, create the board, and put the cards on it
+board = solver.Board()
+Cards.placeCards(board,cardImages)
+
+# and finally play the game
+solver.playGameWithBoard(board)
+
 
 
 
