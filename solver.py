@@ -9,10 +9,15 @@ import time
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+import csv
+import tensorflow.keras as keras
+import tensorflow as tf
+
+model = keras.models.load_model("solverModel.keras")
 
 console = Console()
 
-ABANDON_THRESHOLD = 500000
+ABANDON_THRESHOLD = 75000
 
 class CardRank(Enum):
 	Ace = 1
@@ -134,6 +139,7 @@ class Tally:
 		self.winnable = 0
 		self.losers = 0
 		self.abandoned = 0
+		self.correctGuess = 0
 
 
 class Position: 
@@ -167,6 +173,10 @@ def cardValue(card: Card) -> int:
 	if card is None:
 		return 0
 	return  int(card.suit) * 20 + card.rank.value
+
+def stackVector(stack: Stack) -> int:
+	if len(stack.pile) == 0: return [0]
+	return list(map(lambda c: cardValue(c),stack.pile))
 
 def stackValue(stack: Stack, bottom=False) -> int:	
 	if len(stack.pile) == 0: return 0
@@ -242,7 +252,24 @@ class Board:
 
 		# deal last two cards into the cells
 		self.cells[0].pile.append(deck.deal())
-		self.cells[1].pile.append(deck.deal())                
+		self.cells[1].pile.append(deck.deal()) 
+
+	@property
+	def vector(self) -> List[int]:
+		"""Return a vector representation of the board"""
+		vec: List[int] = []
+		for c in self.cells:
+			vec = vec+stackVector(c)
+
+		for s in self.stacks:
+			vec = vec+stackVector(s)
+
+		return vec
+
+
+
+
+
 
 	# clear the board of cards and initialize the board components
 	def clearBoard(self): 
@@ -511,7 +538,7 @@ class MasterBoardMemory:
 
 class Game:
 
-	def __init__(self,tally: Tally,boardMemory: MasterBoardMemory,board:Board) :
+	def __init__(self,tally: Tally,boardMemory: MasterBoardMemory,board:Board = None) :
 		
 		self.tally:Tally = tally
 		self.boardMemory:MasterBoardMemory = boardMemory
@@ -708,14 +735,16 @@ class Game:
 		table.add_column('Winnable')
 		table.add_column('Losers')
 		table.add_column('Abandoned')
+		table.add_column('Correct Guess')
 		table.add_column('Stack Size')
 		table.add_column('Total Moves')
 		table.add_column('Unique Configurations')
-		table.add_column('Repeates Avoided')
+		table.add_column('Repeats Avoided')
 		table.add_row(str(self.tally.totalGames),
 				str(self.tally.winnable),
 				str(self.tally.losers),
 				str(self.tally.abandoned),
+				str(self.tally.correctGuess),
 				str(self.stackSize),
 				str(self.totalMoves),
 				str(self.boardMemory.size),
@@ -731,28 +760,54 @@ def main() :
 	
 	tally = Tally()
 
-	for i in range(0,1000):
-		boardMemory = MasterBoardMemory()
-		
-		game = Game(tally,boardMemory)
-		game.display(title = "Start")
-		
+	with open('games.csv','a') as csvFile:
+
+		csvWriter = csv.writer(csvFile)
 		
 
-		success = game.cycleThroughCards()
+		for i in range(0,10000):
+			boardMemory = MasterBoardMemory()
+			
+			game = Game(tally,boardMemory)
+			game.display(title = "Start")		
 
-		tally.totalGames += 1
-		if (game.abandoned) : tally.abandoned += 1 
-		else:
-			if (success):  tally.winnable += 1 
-			else:  tally.losers += 1 
+			boardVector = game.board.vector
+			tensor = np.array([boardVector])
+			tensor.transpose()
+			predictions = model.predict(tensor, steps=1,verbose=1)
+			guess = np.round(predictions[0][0])
+			print("Predict:",guess)
+			
 
-		
+			success = game.cycleThroughCards()
 
-		game.display(title = "Finished")
-		time.sleep(0.5)
+			tally.totalGames += 1
+			gameResult = 0
+			if (game.abandoned) : 
+				gameResult = 3
+				tally.abandoned += 1 
+			else:
+				if (success):  
+					gameResult = 1
+					tally.winnable += 1 
+				else:  
+					gameResult = 2
+					tally.losers += 1 
 
-		# if success : game.replayGame()
+			if gameResult == guess:
+				tally.correctGuess += 1
+
+
+			boardVector.append(gameResult)
+			csvWriter.writerow(boardVector)			
+			csvFile.flush()
+
+			game.display(title = "Finished")
+			# time.sleep(0.5)
+
+			# if success : game.replayGame()
+
+
 		
 
 
@@ -780,5 +835,8 @@ def playGameWithBoard(board:Board):
 	time.sleep(0.5)
 
 	if success : game.replayGame()
-		
 
+
+
+
+main()
